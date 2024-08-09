@@ -1,0 +1,16 @@
+oss:
+  endpoint: http://192.168.0.120:9000
+  access-key: miniouser
+  secret-key: 123456789
+  bucket-name: aaa
+  region: cn-north-1
+  expiring-buckets:
+    expire-bucket-1: 1
+
+logging:
+  level:
+    software:
+      amazon:
+        awssdk:
+          services:
+            s3: DEBUG

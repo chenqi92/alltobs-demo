@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: alltobs-oss-demo
+  profiles:
+    active: dev
+server:
+  port: 7777
+
