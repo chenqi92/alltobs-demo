@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OSS Manager</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+</head>
+<body>
+<div id="app">
+    <el-container>
+        <el-header>
+            <h2>OSS 管理</h2>
+        </el-header>
+        <el-main>
+            <el-row :gutter="20">
+                <el-col :span="8">
+                    <h3>Bucket 操作</h3>
+                    <el-input v-model="newBucketName" placeholder="输入新 Bucket 名称"></el-input>
+                    <el-button type="primary" @click="createBucket">创建 Bucket</el-button>
+                    <el-table :data="buckets" style="width: 100%">
+                        <el-table-column prop="name" label="Bucket 名称" width="180"></el-table-column>
+                        <el-table-column label="操作" width="180">
+                            <template slot-scope="scope">
+                                <el-button size="mini" @click="deleteBucket(scope.row.name)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-col>
+                <el-col :span="16">
+                    <h3>对象操作</h3>
+                    <el-input v-model="selectedBucket" placeholder="选择 Bucket 并输入前缀"></el-input>
+                    <el-input v-model="objectPrefix" placeholder="输入前缀"></el-input>
+                    <el-button type="primary" @click="listObjects">列出对象</el-button>
+                    <el-table :data="objects" style="width: 100%">
+                        <el-table-column prop="key" label="对象名称" width="180"></el-table-column>
+                        <el-table-column label="操作" width="180">
+                            <template slot-scope="scope">
+                                <el-button size="mini" @click="deleteObject(scope.row.key)">删除</el-button>
+                                <el-button size="mini" @click="downloadObject(scope.row.key)">下载</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-col>
+            </el-row>
+        </el-main>
+    </el-container>
+</div>
+<!-- 引入 Vue 和 Element UI 的 JavaScript 文件 -->
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="/js/oss-manager.js"></script>
+</body>
+</html>
