@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @RestController
@@ -250,5 +251,25 @@ public class OssController {
     @GetMapping("/getObjectTags")
     public R<Map<String, String>> getObjectTags(@RequestParam String bucketName, @RequestParam String objectName) {
         return R.ok(ossTemplate.getObjectTags(bucketName, objectName));
+    }
+
+    /**
+     * 上传文件并设置过期时间
+     *
+     * @param bucketName 桶名
+     * @param file       文件
+     * @param days    过期天数只支持以天为单位删除文件
+     * @return R
+     */
+    @PostMapping("putObjectWithExpiration")
+    public R<String> putObjectWithExpiration(@RequestParam String bucketName, @RequestParam MultipartFile file, @RequestParam int days) {
+        String fileName = file.getOriginalFilename();
+        try {
+            String uuid = UUID.randomUUID() + "." + FileUtil.getFileType(fileName);
+            ossTemplate.putObjectWithExpiration(bucketName, uuid, file.getInputStream(), days);
+            return R.ok("File uploaded: " + uuid);
+        } catch (IOException e) {
+            return R.fail("Failed to upload file: " + fileName);
+        }
     }
 }
