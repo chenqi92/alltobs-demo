@@ -1,6 +1,6 @@
 package com.alltobs.ossdemo;
 
-import cn.allbs.oss.annotation.EnableAllbsOss;
+import com.alltobs.oss.annotation.EnableAllbsOss;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
