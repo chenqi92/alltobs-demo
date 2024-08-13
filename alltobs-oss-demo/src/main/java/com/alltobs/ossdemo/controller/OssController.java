@@ -8,15 +8,17 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -258,7 +260,7 @@ public class OssController {
      *
      * @param bucketName 桶名
      * @param file       文件
-     * @param days    过期天数只支持以天为单位删除文件
+     * @param days       过期天数只支持以天为单位删除文件
      * @return R
      */
     @PostMapping("putObjectWithExpiration")
@@ -271,5 +273,145 @@ public class OssController {
         } catch (IOException e) {
             return R.fail("Failed to upload file: " + fileName);
         }
+    }
+
+    @PostMapping("/uploadWithEncryption")
+    public R<String> uploadWithEncryption(@RequestParam String bucketName,
+                                          @RequestParam("file") MultipartFile file) {
+        String uuid = UUID.randomUUID() + "." + FileUtil.getFileType(file.getOriginalFilename());
+        try (InputStream inputStream = file.getInputStream()) {
+            PutObjectResponse response = ossTemplate.uploadWithEncryption(
+                    bucketName,
+                    uuid,
+                    inputStream,
+                    file.getSize(),
+                    file.getContentType()
+            );
+            return R.ok("File uploaded with encryption: " + response.toString());
+        } catch (IOException e) {
+            return R.fail("File upload failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 分片上传
+     *
+     * @param bucketName 桶名
+     * @param file       文件
+     * @return R
+     */
+    @PostMapping("/uploadMultipart")
+    public R<String> uploadMultipart(@RequestParam String bucketName,
+                                     @RequestParam MultipartFile file) throws IOException, InterruptedException {
+        String objectName = file.getOriginalFilename();
+        // 初始化分片上传
+        String uploadId = ossTemplate.initiateMultipartUpload(bucketName, objectName);
+        System.out.println("Upload ID: " + uploadId);
+
+        // 将文件按部分大小（5MB）分块上传
+        long partSize = 5 * 1024 * 1024;
+        long fileSize = file.getSize();
+        int partCount = (int) Math.ceil((double) fileSize / partSize);
+
+        // 用于存储已上传的部分
+        List<CompletedPart> completedParts = Collections.synchronizedList(new ArrayList<>());
+
+        // 创建线程池
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(partCount, 10));
+
+        for (int i = 0; i < partCount; i++) {
+            final int partNumber = i + 1;
+            long startPos = i * partSize;
+            long size = Math.min(partSize, fileSize - startPos);
+
+            executor.submit(() -> {
+                try (InputStream inputStream = file.getInputStream()) {
+                    inputStream.skip(startPos);
+                    byte[] buffer = new byte[(int) size];
+                    int bytesRead = inputStream.read(buffer, 0, (int) size);
+
+                    if (bytesRead > 0) {
+                        CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
+                        completedParts.add(part);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+
+        // 检查是否成功上传了所有部分
+        if (completedParts.size() == partCount) {
+            // 在完成上传之前，按 partNumber 升序排序
+            completedParts.sort(Comparator.comparing(CompletedPart::partNumber));
+
+            // 完成分片上传
+            ossTemplate.completeMultipartUpload(bucketName, objectName, uploadId, completedParts);
+            return R.ok("Upload completed successfully uploadId: " + uploadId);
+        } else {
+            // 如果有部分上传失败，取消上传
+            ossTemplate.abortMultipartUpload(bucketName, objectName, uploadId);
+            return R.fail("Upload failed, some parts are missing.");
+        }
+    }
+
+    /**
+     * 断点续传
+     *
+     * @param bucketName 桶名
+     * @param file       文件
+     * @param uploadId   上传 ID
+     * @return R
+     */
+    @PostMapping("/resumeMultipart")
+    public R<String> resumeMultipart(@RequestParam String bucketName,
+                                     @RequestParam MultipartFile file,
+                                     @RequestParam String uploadId) throws IOException, InterruptedException {
+        String objectName = file.getOriginalFilename();
+
+        // 将文件读入内存
+        byte[] fileBytes = file.getBytes();
+
+        // 获取已经上传的部分
+        List<CompletedPart> completedParts = ossTemplate.listParts(bucketName, objectName, uploadId);
+
+        // 继续上传未完成的部分
+        long partSize = 5 * 1024 * 1024;
+        long fileSize = fileBytes.length;
+        int partCount = (int) Math.ceil((double) fileSize / partSize);
+
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(partCount, 10));
+
+        for (int i = completedParts.size(); i < partCount; i++) {
+            final int partNumber = i + 1;
+            long startPos = i * partSize;
+            long size = Math.min(partSize, fileSize - startPos);
+
+            executor.submit(() -> {
+                try {
+                    byte[] buffer = Arrays.copyOfRange(fileBytes, (int) startPos, (int) (startPos + size));
+                    CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
+                    synchronized (completedParts) {
+                        completedParts.add(part);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+
+        // 按 partNumber 升序排序
+        completedParts.sort(Comparator.comparing(CompletedPart::partNumber));
+
+        // 完成分片上传
+        ossTemplate.completeMultipartUpload(bucketName, objectName, uploadId, completedParts);
+
+        return R.ok("Upload resumed and completed successfully");
     }
 }

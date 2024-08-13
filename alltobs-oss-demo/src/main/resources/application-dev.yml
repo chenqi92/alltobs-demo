@@ -7,6 +7,12 @@ oss:
   expiring-buckets:
     expire-bucket-1: 1
 
+spring:
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+
 logging:
   level:
     software:
