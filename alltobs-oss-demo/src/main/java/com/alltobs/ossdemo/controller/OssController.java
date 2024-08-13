@@ -275,6 +275,13 @@ public class OssController {
         }
     }
 
+    /**
+     * 上传文件并加密
+     *
+     * @param bucketName 桶名
+     * @param file       文件
+     * @return R
+     */
     @PostMapping("/uploadWithEncryption")
     public R<String> uploadWithEncryption(@RequestParam String bucketName,
                                           @RequestParam("file") MultipartFile file) {
@@ -413,5 +420,21 @@ public class OssController {
         ossTemplate.completeMultipartUpload(bucketName, objectName, uploadId, completedParts);
 
         return R.ok("Upload resumed and completed successfully");
+    }
+
+    /**
+     * 生成预签名 URL
+     *
+     * @param bucketName 桶名
+     * @param objectName 对象名
+     * @param expiration 过期时间（秒）
+     * @return R
+     */
+    @GetMapping("/generatePreSignedUrl")
+    public R<String> generatePreSignedUrl(@RequestParam String bucketName,
+                                          @RequestParam String objectName,
+                                          @RequestParam int expiration) {
+        String preSignedUrl = ossTemplate.generatePreSignedUrlForPut(bucketName, objectName, expiration);
+        return R.ok(preSignedUrl);
     }
 }
