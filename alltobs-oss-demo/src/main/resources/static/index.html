@@ -47,6 +47,7 @@
     </div>
     <button onclick="uploadFile()">上传文件</button>
     <p id="statusText"></p>
+    <p><a id="previewLink" href="#" target="_blank" style="display:none;">点击这里预览文件</a></p>
 </div>
 
 <script>
@@ -86,6 +87,11 @@
         xhr.onload = function() {
             if (xhr.status === 200) {
                 document.getElementById('statusText').innerText = '文件上传成功！';
+
+                // 设置预览链接
+                const previewLink = document.getElementById('previewLink');
+                previewLink.href = presignedUrl;
+                previewLink.style.display = 'inline';
             } else {
                 document.getElementById('statusText').innerText = '文件上传失败，请重试。';
             }

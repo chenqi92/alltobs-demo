@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -93,7 +95,7 @@ public class OssController {
      */
     @GetMapping("/getObjectURL")
     public R<String> getObjectURL(@RequestParam String bucketName, @RequestParam String objectName, @RequestParam int minutes) {
-        return R.ok(ossTemplate.getObjectURL(bucketName, objectName, minutes));
+        return R.ok(ossTemplate.getObjectURL(bucketName, objectName, Duration.of(minutes, ChronoUnit.MINUTES)));
     }
 
     /**
