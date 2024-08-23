@@ -324,6 +324,7 @@ public class OssController {
 
         // 用于存储已上传的部分
         List<CompletedPart> completedParts = Collections.synchronizedList(new ArrayList<>());
+        List<Integer> failedParts = Collections.synchronizedList(new ArrayList<>());
 
         // 创建线程池
         ExecutorService executor = Executors.newFixedThreadPool(Math.min(partCount, 10));
@@ -334,18 +335,33 @@ public class OssController {
             long size = Math.min(partSize, fileSize - startPos);
 
             executor.submit(() -> {
-                try (InputStream inputStream = file.getInputStream()) {
-                    inputStream.skip(startPos);
-                    byte[] buffer = new byte[(int) size];
-                    int bytesRead = inputStream.read(buffer, 0, (int) size);
+                int retryCount = 0;
+                boolean success = false;
+//                while (retryCount < 3 && !success) {
+                    try (InputStream inputStream = file.getInputStream()) {
+                        inputStream.skip(startPos);
+                        byte[] buffer = new byte[(int) size];
+                        int bytesRead = inputStream.read(buffer, 0, (int) size);
 
-                    if (bytesRead > 0) {
-                        CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
-                        completedParts.add(part);
+                        if (bytesRead > 0) {
+                            // 模拟部分上传失败的情况
+                            if (Math.random() < 0.2) { // 20%的几率模拟失败
+                                throw new IOException("Simulated upload failure for part " + partNumber);
+                            }
+
+                            CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
+                            completedParts.add(part);
+                            success = true;
+                        }
+                    } catch (IOException e) {
+                        // 可以在这边加入重试机制,参考下面注释代码，为了确保一定有失败的部分所以注释
+//                        retryCount++;
+//                        if (retryCount >= 3) {
+//                            failedParts.add(partNumber);
+//                        }
+                        e.printStackTrace();
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+//                }
             });
         }
 
@@ -353,7 +369,7 @@ public class OssController {
         executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
 
         // 检查是否成功上传了所有部分
-        if (completedParts.size() == partCount) {
+        if (completedParts.size() == partCount && failedParts.isEmpty()) {
             // 在完成上传之前，按 partNumber 升序排序
             completedParts.sort(Comparator.comparing(CompletedPart::partNumber));
 
@@ -361,9 +377,9 @@ public class OssController {
             ossTemplate.completeMultipartUpload(bucketName, objectName, uploadId, completedParts);
             return R.ok("Upload completed successfully uploadId: " + uploadId);
         } else {
-            // 如果有部分上传失败，取消上传
-            ossTemplate.abortMultipartUpload(bucketName, objectName, uploadId);
-            return R.fail("Upload failed, some parts are missing.");
+            // 如果有部分上传失败，取消上传,为了测试断点续传所有注释
+//            ossTemplate.abortMultipartUpload(bucketName, objectName, uploadId);
+            return R.fail("Upload failed, some parts are missing or failed. uploadId: " + uploadId);
         }
     }
 
@@ -387,15 +403,26 @@ public class OssController {
         // 获取已经上传的部分
         List<CompletedPart> completedParts = ossTemplate.listParts(bucketName, objectName, uploadId);
 
+        // 找出已经上传的部分编号
+        Set<Integer> uploadedPartNumbers = completedParts.stream()
+                .map(CompletedPart::partNumber)
+                .collect(Collectors.toSet());
+
         // 继续上传未完成的部分
         long partSize = 5 * 1024 * 1024;
         long fileSize = fileBytes.length;
         int partCount = (int) Math.ceil((double) fileSize / partSize);
 
-        ExecutorService executor = Executors.newFixedThreadPool(Math.min(partCount, 10));
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(partCount - uploadedPartNumbers.size(), 10));
 
-        for (int i = completedParts.size(); i < partCount; i++) {
+        for (int i = 0; i < partCount; i++) {
             final int partNumber = i + 1;
+
+            // 跳过已上传的部分
+            if (uploadedPartNumbers.contains(partNumber)) {
+                continue;
+            }
+
             long startPos = i * partSize;
             long size = Math.min(partSize, fileSize - startPos);
 
