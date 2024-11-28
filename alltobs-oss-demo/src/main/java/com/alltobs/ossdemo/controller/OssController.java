@@ -338,29 +338,29 @@ public class OssController {
                 int retryCount = 0;
                 boolean success = false;
 //                while (retryCount < 3 && !success) {
-                    try (InputStream inputStream = file.getInputStream()) {
-                        inputStream.skip(startPos);
-                        byte[] buffer = new byte[(int) size];
-                        int bytesRead = inputStream.read(buffer, 0, (int) size);
+                try (InputStream inputStream = file.getInputStream()) {
+                    inputStream.skip(startPos);
+                    byte[] buffer = new byte[(int) size];
+                    int bytesRead = inputStream.read(buffer, 0, (int) size);
 
-                        if (bytesRead > 0) {
-                            // 模拟部分上传失败的情况
-                            if (Math.random() < 0.2) { // 20%的几率模拟失败
-                                throw new IOException("Simulated upload failure for part " + partNumber);
-                            }
-
-                            CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
-                            completedParts.add(part);
-                            success = true;
+                    if (bytesRead > 0) {
+                        // 模拟部分上传失败的情况
+                        if (Math.random() < 0.2) { // 20%的几率模拟失败
+                            throw new IOException("Simulated upload failure for part " + partNumber);
                         }
-                    } catch (IOException e) {
-                        // 可以在这边加入重试机制,参考下面注释代码，为了确保一定有失败的部分所以注释
+
+                        CompletedPart part = ossTemplate.uploadPart(bucketName, objectName, uploadId, partNumber, buffer);
+                        completedParts.add(part);
+                        success = true;
+                    }
+                } catch (IOException e) {
+                    // 可以在这边加入重试机制,参考下面注释代码，为了确保一定有失败的部分所以注释
 //                        retryCount++;
 //                        if (retryCount >= 3) {
 //                            failedParts.add(partNumber);
 //                        }
-                        e.printStackTrace();
-                    }
+                    e.printStackTrace();
+                }
 //                }
             });
         }
@@ -465,5 +465,28 @@ public class OssController {
                                           @RequestParam int expiration) {
         String preSignedUrl = ossTemplate.generatePreSignedUrlForPut(bucketName, objectName, expiration);
         return R.ok(preSignedUrl);
+    }
+
+
+    /**
+     * 清除所有临时文件
+     *
+     * @param bucketName 桶名
+     * @return
+     */
+    @GetMapping("clearAllTemporaryFiles")
+    public R<?> clearAllTemporaryFiles(@RequestParam String bucketName, @RequestParam String uploadId, @RequestParam MultipartFile file) {
+//        ossTemplate.clearAllTemporaryFiles(bucketName, uploadId, file.getOriginalFilename());
+        return R.ok();
+    }
+
+    @GetMapping("getAllFoldersAndFiles")
+    public R<?> getAllFoldersAndFiles(@RequestParam("folder") String folder) {
+        return R.ok(ossTemplate.listFilesAndFolders(folder));
+    }
+
+    @GetMapping("getAllFilesOnlyJpg")
+    public R<?> getAllFilesOnlyJpg(@RequestParam("folder") String folder) {
+        return R.ok(ossTemplate.listFilesAndFolders(folder, ".jpg"));
     }
 }
